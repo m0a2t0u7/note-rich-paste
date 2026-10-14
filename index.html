@@ -36,25 +36,41 @@ button.main{background:var(--accent);color:var(--accent-fg);border-color:var(--a
 .prev blockquote{border-left:3px solid var(--line);margin:0;padding-left:12px;color:var(--muted)}
 .prev pre{background:var(--bg);padding:10px;border-radius:6px;overflow-x:auto;font-family:var(--mono);font-size:13px}
 .prev a{color:var(--accent)}
+.cards{display:flex;flex-direction:column;gap:10px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.card.h{border-left:4px solid var(--accent)}
+.card.done{opacity:.45}
+.card .tag{font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.04em}
+.card .txt{white-space:pre-wrap;overflow-wrap:anywhere;max-height:9.5em;overflow:hidden;font-size:14px}
+.card.h .txt{font-weight:700;font-size:16px}
+.card .bold{font-size:12px;color:var(--muted)}
+.card button{align-self:flex-start}
 details{font-size:13px;color:var(--muted)} details ul{padding-left:1.2em;margin:.4em 0}
 </style>
 </head><body>
 
 <div class="wrap">
   <h1 class="app">noteリッチ貼り</h1>
-  <p class="sub">Markdownを貼る → コピー → noteの下書きに貼る。見出し・太字・リスト・引用・リンク・コードが反映されます。</p>
+  <p class="sub">スマホのnoteは装飾付き貼り付け非対応のため、見出しごとに分けてコピーします。</p>
 
   <label for="src">Markdown（ここに貼る）</label>
   <textarea id="src" spellcheck="false"></textarea>
 
   <div class="bar">
-    <button class="main" id="copy">noteに貼れる形でコピー</button>
+    <button class="main" id="reset">分割し直す（コピー済みを解除）</button>
     <button id="clear">クリア</button>
   </div>
   <p id="status" role="status"></p>
 
-  <label>noteでの見え方（プレビュー）</label>
-  <div class="prev" id="prev"></div>
+  <label>分割コピー（上から順にコピー → noteに貼る）</label>
+  <div id="cards" class="cards"></div>
+
+  <details>
+    <summary>PC用：装飾ごと一括コピー</summary>
+    <p class="sub">PCのnoteなら見出し・太字ごと1回で貼れます。</p>
+    <button id="copy">装飾ごと一括コピー</button>
+    <div class="prev" id="prev"></div>
+  </details>
 
   <details>
     <summary>変換ルール</summary>
@@ -111,7 +127,52 @@ function toNoteHtml(md){
   box.querySelectorAll('hr').forEach(h=>h.remove());
   return box.innerHTML;
 }
-function render(){prev.innerHTML=toNoteHtml(src.value);try{localStorage.setItem('md2note',src.value)}catch(e){}}
+const cardsEl=document.getElementById('cards');
+function blockText(el){
+  const t=el.tagName;
+  if(t==='UL') return [...el.children].map(li=>'・'+li.textContent.trim()).join('\n');
+  if(t==='OL') return [...el.children].map((li,i)=>(i+1)+'. '+li.textContent.trim()).join('\n');
+  const c=el.cloneNode(true);
+  c.querySelectorAll('a').forEach(a=>{const u=a.getAttribute('href')||'';if(u&&u!==a.textContent)a.replaceWith(`${a.textContent}（${u}）`)});
+  c.querySelectorAll('br').forEach(b=>b.replaceWith('\n'));
+  return c.textContent.trim();
+}
+function split(md){
+  const box=document.createElement('div');box.innerHTML=toNoteHtml(md);
+  const out=[];let body=[],bold=[];
+  const flush=()=>{if(body.length){out.push({type:'b',text:body.join('\n\n'),bold:[...new Set(bold)]});}body=[];bold=[]};
+  [...box.children].forEach(el=>{
+    if(el.tagName==='H2'||el.tagName==='H3'){flush();out.push({type:'h',size:el.tagName==='H2'?'大見出し':'小見出し',text:el.textContent.trim()});return}
+    el.querySelectorAll('strong').forEach(s=>bold.push(s.textContent.trim()));
+    const tx=blockText(el);if(tx)body.push(tx);
+  });
+  flush();return out;
+}
+async function copyText(t){
+  try{await navigator.clipboard.writeText(t);return true}catch(e){}
+  const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();
+  let ok=false;try{ok=document.execCommand('copy')}catch(e){}ta.remove();return ok;
+}
+function renderCards(){
+  cardsEl.innerHTML='';
+  split(src.value).forEach((c,i)=>{
+    const d=document.createElement('div');d.className='card'+(c.type==='h'?' h':'');
+    const tag=document.createElement('div');tag.className='tag';
+    tag.textContent=c.type==='h'?`${c.size}：貼ったらツールバーの「見出し」→「${c.size}」`:'本文：そのまま貼る';
+    const tx=document.createElement('div');tx.className='txt';tx.textContent=c.text;
+    const b=document.createElement('button');b.id='c'+i;b.textContent='コピー';
+    b.addEventListener('click',async()=>{
+      const ok=await copyText(c.text);
+      if(ok){d.classList.add('done');b.textContent='コピー済み';msg(`${i+1}番目をコピーしました。`,true)}
+      else msg('コピーできませんでした。本文を長押しで選択してください。',false);
+    });
+    d.append(tag,tx);
+    if(c.bold&&c.bold.length){const bl=document.createElement('div');bl.className='bold';bl.textContent='太字にする箇所：'+c.bold.join('、');d.append(bl)}
+    d.append(b);cardsEl.append(d);
+  });
+}
+function render(){prev.innerHTML=toNoteHtml(src.value);renderCards();try{localStorage.setItem('md2note',src.value)}catch(e){}}
+document.getElementById('reset').addEventListener('click',()=>{render();msg('分割し直しました。',true)});
 function msg(t,ok){st.textContent=t;st.className=ok?'ok':'ng'}
 
 document.getElementById('copy').addEventListener('click',async()=>{

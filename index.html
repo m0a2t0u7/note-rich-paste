@@ -1,0 +1,138 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>noteリッチ貼り</title>
+<style>
+/* 縦1列：入力 → 操作バー → noteで見える形のプレビュー */
+:root{
+  --bg:#f3f6f4; --panel:#ffffff; --fg:#1c2622; --muted:#5f6f68;
+  --line:#d5e0db; --accent:#1f8a62; --accent-fg:#ffffff; --ok:#1f8a62; --warn:#b4541a;
+  --sans:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",sans-serif;
+  --mono:"M PLUS 1 Code",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121815; --panel:#1b2420; --fg:#e4ece8; --muted:#97a8a0; --line:#2e3b35;
+  --accent:#4cc394; --accent-fg:#0b1511; --ok:#4cc394; --warn:#f0965a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121815; --panel:#1b2420; --fg:#e4ece8; --muted:#97a8a0; --line:#2e3b35;
+  --accent:#4cc394; --accent-fg:#0b1511; --ok:#4cc394; --warn:#f0965a; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:15px;line-height:1.7}
+.wrap{max-width:760px;margin:0 auto;padding-block:20px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:14px}
+h1.app{font-size:20px;margin:0;text-wrap:balance}
+.sub{color:var(--muted);font-size:13px;margin:0}
+label{font-size:12px;letter-spacing:.06em;color:var(--muted);font-weight:700}
+textarea{width:100%;box-sizing:border-box;min-height:200px;resize:vertical;border:1px solid var(--line);
+  border-radius:8px;background:var(--panel);color:var(--fg);font-family:var(--mono);font-size:13px;padding:12px}
+textarea:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;position:sticky;top:env(safe-area-inset-top,0px);
+  background:var(--bg);padding-block:8px;z-index:2}
+button{font-family:var(--sans);font-size:15px;font-weight:700;border-radius:8px;padding:12px 16px;cursor:pointer;
+  border:1px solid var(--line);background:var(--panel);color:var(--fg)}
+button.main{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);flex:1 1 200px}
+#status{font-size:13px;min-height:1.4em;margin:0}
+#status.ok{color:var(--ok)} #status.ng{color:var(--warn)}
+.prev{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;min-width:0;overflow-wrap:anywhere}
+.prev h2{font-size:22px;margin:1.2em 0 .4em} .prev h3{font-size:18px;margin:1em 0 .3em}
+.prev blockquote{border-left:3px solid var(--line);margin:0;padding-left:12px;color:var(--muted)}
+.prev pre{background:var(--bg);padding:10px;border-radius:6px;overflow-x:auto;font-family:var(--mono);font-size:13px}
+.prev a{color:var(--accent)}
+details{font-size:13px;color:var(--muted)} details ul{padding-left:1.2em;margin:.4em 0}
+</style>
+</head><body>
+
+<div class="wrap">
+  <h1 class="app">noteリッチ貼り</h1>
+  <p class="sub">Markdownを貼る → コピー → noteの下書きに貼る。見出し・太字・リスト・引用・リンク・コードが反映されます。</p>
+
+  <label for="src">Markdown（ここに貼る）</label>
+  <textarea id="src" spellcheck="false"></textarea>
+
+  <div class="bar">
+    <button class="main" id="copy">noteに貼れる形でコピー</button>
+    <button id="clear">クリア</button>
+  </div>
+  <p id="status" role="status"></p>
+
+  <label>noteでの見え方（プレビュー）</label>
+  <div class="prev" id="prev"></div>
+
+  <details>
+    <summary>変換ルール</summary>
+    <ul>
+      <li># と ## は大見出し、### 以下は小見出しに変換</li>
+      <li>表は「列名：値」の箇条書きに変換（noteは表非対応）</li>
+      <li>コピーできないときは、プレビューを長押しで全選択してコピー</li>
+      <li>noteはアプリより、Chromeでnote.comを開いて貼るほうが確実</li>
+    </ul>
+  </details>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script>
+const src=document.getElementById('src'),prev=document.getElementById('prev'),st=document.getElementById('status');
+const SAMPLE=`## サンプル見出し
+
+**太字**と*斜体*、[リンク](https://note.com/shinya_latte)が使えます。
+
+### 小見出し
+
+- 箇条書き1
+- 箇条書き2
+
+> 引用もそのまま
+
+| ツール | 用途 |
+|---|---|
+| Claude | 下書き |
+| note | 公開 |
+
+\`\`\`
+コードブロック
+\`\`\``;
+
+function toNoteHtml(md){
+  const box=document.createElement('div');
+  box.innerHTML=marked.parse(md,{gfm:true,breaks:true});
+  // 見出しをnote仕様（大h2・小h3）に寄せる
+  box.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(h=>{
+    const n=document.createElement(/H[12]/.test(h.tagName)?'h2':'h3');
+    n.innerHTML=h.innerHTML;h.replaceWith(n);
+  });
+  // 表を箇条書きに
+  box.querySelectorAll('table').forEach(t=>{
+    const heads=[...t.querySelectorAll('thead th')].map(th=>th.textContent.trim());
+    const ul=document.createElement('ul');
+    t.querySelectorAll('tbody tr').forEach(tr=>{
+      const cells=[...tr.children].map((td,i)=>heads[i]?`${heads[i]}：${td.innerHTML}`:td.innerHTML);
+      const li=document.createElement('li');li.innerHTML=cells.join('、');ul.appendChild(li);
+    });
+    t.replaceWith(ul);
+  });
+  box.querySelectorAll('hr').forEach(h=>h.remove());
+  return box.innerHTML;
+}
+function render(){prev.innerHTML=toNoteHtml(src.value);try{localStorage.setItem('md2note',src.value)}catch(e){}}
+function msg(t,ok){st.textContent=t;st.className=ok?'ok':'ng'}
+
+document.getElementById('copy').addEventListener('click',async()=>{
+  render();
+  const html=prev.innerHTML,text=prev.innerText;
+  try{
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/html':new Blob([html],{type:'text/html'}),
+      'text/plain':new Blob([text],{type:'text/plain'})})]);
+    msg('コピーしました。noteの下書きに貼ってください。',true);return;
+  }catch(e){}
+  // 予備：プレビューを選択して従来コピー
+  const r=document.createRange();r.selectNodeContents(prev);
+  const s=getSelection();s.removeAllRanges();s.addRange(r);
+  let ok=false;try{ok=document.execCommand('copy')}catch(e){}
+  msg(ok?'コピーしました（予備方式）。noteに貼ってください。':'自動コピーできませんでした。選択中のプレビューを長押しでコピーしてください。',ok);
+});
+document.getElementById('clear').addEventListener('click',()=>{src.value='';render();msg('',true);src.focus()});
+src.addEventListener('input',render);
+
+let saved=null;try{saved=localStorage.getItem('md2note')}catch(e){}
+src.value=saved||SAMPLE;render();
+</script>
+</body></html>

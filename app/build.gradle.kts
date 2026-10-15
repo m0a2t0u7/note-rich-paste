@@ -2,7 +2,7 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
     namespace = "com.latte.nrp"
     compileSdk = 34
-    defaultConfig { applicationId = "com.latte.nrp"; minSdk = 26; targetSdk = 34; versionCode = 1; versionName = "1.0" }
+    defaultConfig { applicationId = "com.latte.nrp"; minSdk = 26; targetSdk = 34; versionCode = 2; versionName = "1.1" }
     signingConfigs {
         getByName("debug") {
             storeFile = file("debug.keystore")
